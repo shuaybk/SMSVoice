@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <PreferenceScreen
+        android:key="exclusion_list_key"
+        android:title="Exclusion List"
+        android:persistent="true"
+        android:summary="" >
+    </PreferenceScreen>
+</PreferenceScreen>
