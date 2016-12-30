@@ -31,6 +31,7 @@ public class OnClearFromRecentService extends Service {
     public void onTaskRemoved(Intent rootIntent) {
         Log.e("ClearFromRecentService", "END");
         MainActivity.tts.stop();
+        MainActivity.notifManager.cancel(MainActivity.NOTIF_ID);
         stopSelf();
     }
 }

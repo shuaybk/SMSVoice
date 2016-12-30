@@ -1,45 +1,38 @@
 package com.shuaybprojects.smsvoice;
 
 
-import android.content.BroadcastReceiver;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
-import android.net.Uri;
-import android.preference.PreferenceFragment;
+import android.media.AudioManager;
 import android.preference.PreferenceManager;
 import android.provider.ContactsContract;
 import android.speech.tts.TextToSpeech;
-import android.speech.tts.UtteranceProgressListener;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.support.v7.widget.Toolbar;
+import android.support.v4.app.NotificationCompat;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
-import android.widget.Toast;
-
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 
-import javax.security.auth.callback.PasswordCallback;
-
 
 public class MainActivity extends AppCompatActivity {
 
-    protected static final String INBOX = "content://sms/inbox";
-    protected final int REQUEST_CODE_ASK_PERMISSIONS = 123;
-
+    protected static final int REQUEST_CODE_ASK_PERMISSIONS = 123;
+    protected static final int NOTIF_ID = 456;
+    protected static NotificationManager notifManager;
     protected static TextToSpeech tts;
     Button button;
     TextView messageText;
@@ -55,7 +48,10 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+
         startService(new Intent(this, OnClearFromRecentService.class));
+        notifManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 
         started = false;
 
@@ -77,6 +73,7 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View v) {
                 if (started) {
                     started = false;
+                    stopNotification();
                     tts.stop();
                     unregisterReceiver(smsListener);
                     button.setText("Start\nListening");
@@ -85,6 +82,7 @@ public class MainActivity extends AppCompatActivity {
                     if((ContextCompat.checkSelfPermission(getBaseContext(), "android.permission.READ_SMS") == PackageManager.PERMISSION_GRANTED) &&
                             (ContextCompat.checkSelfPermission(getBaseContext(), "android.permission.READ_CONTACTS") == PackageManager.PERMISSION_GRANTED)) {
                         started = true;
+                        startNotification();
                         if (smsListener == null) {
                             smsListener = new SmsListener();
                         }
@@ -167,6 +165,11 @@ public class MainActivity extends AppCompatActivity {
                 contactNames[i][0] = cursor.getString(1); //The names
                 contactNames[i][1] = cursor.getString(0); //The phone numbers
                 contactNames[i][2] = "key_" + cursor.getString(2); //Construct the key
+
+                //Ensure phoneNum is not null or will cause issues in other places
+                if (contactNames[i][1] == null) {
+                    contactNames[i][1] = "";
+                }
                 i++;
             }
         } while(cursor.moveToNext());
@@ -174,23 +177,9 @@ public class MainActivity extends AppCompatActivity {
         cursor.close();
     }
 
-    public static SmsMessage getMessage(Context context) {
-        String name = null;
-        String message = null;
-
-        Cursor cursor = context.getContentResolver().query(Uri.parse(INBOX), new String[]{"address", "body"}, null, null, "date DESC");
-        if (cursor.moveToFirst()) {
-            name = getName(cursor.getString(0), context);
-            message = cursor.getString(1);
-        }
-        cursor.close();
-
-        return new SmsMessage(name, message);
-    }
-
-    public static String getName(String phoneNum, Context context) {
+    public static String getName(Context context, String phoneNum) {
         Cursor cursor = context.getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, new String[]{"display_name"}, ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER + "=" + "\'" + phoneNum + "\'", null, null);
-        String name = null;
+        String name = "";
 
         if (cursor.moveToFirst()) {
             name = cursor.getString(0);
@@ -200,11 +189,12 @@ public class MainActivity extends AppCompatActivity {
         return name;
     }
 
-    public static boolean isExcluded(String name, Context context) {
+    public static boolean isExcluded(String phoneNum, Context context) {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
         String key = "";
+
         for (int i = 0; i < MainActivity.contactNames.length; i++) {
-            if (MainActivity.contactNames[i][0].equals(name)) {
+            if (MainActivity.contactNames[i][1].equals(phoneNum)) {
                 key = MainActivity.contactNames[i][2];
                 break;
             }
@@ -215,23 +205,37 @@ public class MainActivity extends AppCompatActivity {
         return sharedPref.getBoolean(key, false);
     }
 
-    public static void readLastMessage(Context context){
-        SmsMessage toRead = getMessage(context);
+    public static void readLastMessage(Context context, String phoneNum, String message){
 
-        if (!isExcluded(toRead.sender, context)) {
+        if (!isExcluded(phoneNum, context)) {
+            String sender = getName(context, phoneNum);
             map = new HashMap<String, String>();
             map.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "id");
             tts.speak("Message from ", TextToSpeech.QUEUE_ADD, map);
             tts.playSilence(200, TextToSpeech.QUEUE_ADD, map);
-            if (toRead.sender == null) {
+            if (sender.equals("") || (sender == null)) {
                 tts.speak("Unknown number", TextToSpeech.QUEUE_ADD, map);
             } else {
-                tts.speak(toRead.sender, TextToSpeech.QUEUE_ADD, map);
+                tts.speak(sender, TextToSpeech.QUEUE_ADD, map);
             }
             tts.playSilence(700, TextToSpeech.QUEUE_ADD, map);
-            tts.speak(toRead.message, TextToSpeech.QUEUE_ADD, map);
+            tts.speak(message, TextToSpeech.QUEUE_ADD, map);
             tts.playSilence(1000, TextToSpeech.QUEUE_ADD, map);
         }
+    }
+
+    public void startNotification() {
+        NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(this)
+                .setSmallIcon(R.drawable.notif)
+                .setContentTitle("SMSListener")
+                .setContentText("Listening for incoming messages")
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH);
+        notifManager.notify(NOTIF_ID, mBuilder.build());
+    }
+
+    public void stopNotification() {
+        notifManager.cancel(NOTIF_ID);
     }
 
 }
