@@ -17,6 +17,7 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v4.app.NotificationCompat;
+import android.telephony.PhoneNumberUtils;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -178,14 +179,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public static String getName(Context context, String phoneNum) {
-        Cursor cursor = context.getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, new String[]{"display_name"}, ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER + "=" + "\'" + phoneNum + "\'", null, null);
         String name = "";
-
-        if (cursor.moveToFirst()) {
-            name = cursor.getString(0);
+        for (int i = 0; i < contactNames.length; i++) {
+            if (PhoneNumberUtils.compare(contactNames[i][1], phoneNum) == true) {
+                name = contactNames[i][0];
+                break;
+            }
         }
-        cursor.close();
-
         return name;
     }
 
@@ -194,7 +194,7 @@ public class MainActivity extends AppCompatActivity {
         String key = "";
 
         for (int i = 0; i < MainActivity.contactNames.length; i++) {
-            if (MainActivity.contactNames[i][1].equals(phoneNum)) {
+            if (PhoneNumberUtils.compare(contactNames[i][1], phoneNum) == true) {
                 key = MainActivity.contactNames[i][2];
                 break;
             }
